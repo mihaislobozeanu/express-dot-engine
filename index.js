@@ -261,17 +261,21 @@ Template.prototype.render = function (options, callback) {
 */
 function getTemplate(filename, options, callback) {
 
+  var isAsync = callback && typeof callback === 'function';
+
   // cache
   if (options && options.cache) {
     var fromCache = cache.get(filename);
     if (fromCache) {
       //console.log('cache hit');
-      return callback(null, fromCache);
+      if (isAsync) {
+        callback(null, fromCache);
+      }
+
+      return fromCache;
     }
     //console.log('cache miss');
   }
-
-  var isAsync = callback && typeof callback === 'function';
 
   // function to call when retieved template
   function done(err, template) {
@@ -400,6 +404,7 @@ function builtTemplateFromString(str, filename, options) {
 
     var templateSettings = _.pick(options, ['settings']);
     options.getTemplate && (templateSettings.getTemplate = options.getTemplate);
+    templateSettings.cache = options.cache || false;
     return new Template({
       express: templateSettings,
       config: config,
