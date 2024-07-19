@@ -375,7 +375,7 @@ function builtTemplateFromString(str, filename, options) {
 
     // config at the beginning of the file
     str.replace(settings.config, function (m, conf) {
-      config = yaml.safeLoad(conf);
+      config = yaml.load(conf);
     });
 
     // strip comments
