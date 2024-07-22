@@ -1,6 +1,7 @@
 var _ = require('lodash');
 var fs = require('fs');
-var dot = require('dot');
+const fsPromises = require('fs').promises;
+var dot = require('@eligo/dot');
 var path = require('path');
 var yaml = require('js-yaml');
 
@@ -464,11 +465,259 @@ function renderString(templateString, options, callback) {
   var template = builtTemplateFromString(templateString, '', options);
   return template.render({ model: options, }, callback);
 }
+function DotDefAsync(options) {
+  this.options = options;
+  this.dirname = options.dirname;
+  this.model = options;
+}
+
+DotDefAsync.prototype = {
+
+  partial: async function (partialPath) {
+
+    console.log('DEPRECATED: ' +
+      'Please use the new syntax for partials' +
+      ' [[= partial(\'path/to/partial\') ]]'
+    );
+
+    var template = await getTemplateAsync(
+      path.join(this.dirname || this.model.settings.views, partialPath),
+      this.model
+    );
+
+    return await template.render({ model: this.model, isPartial: true, });
+  }
+
+};
+function AsyncTemplate(options) {
+  this.options = options;
+
+  // layout
+  this.isLayout = !!options.config.layout;
+  this.master = this.isLayout ?
+    path.join(options.dirname, options.config.layout) :
+    null;
+
+  // build the doT templates
+  this.templates = {};
+  this.settings = _.clone(settings.dot);
+  this.def = new DotDefAsync(options);
+
+  // view data
+  this.viewData = [];
+  if (_.has(options.express, 'settings')
+    && _.has(options.express.settings, 'view data')
+  ) {
+    this.settings.varname = _.reduce(
+      options.express.settings['view data'],
+      function (result, value, key) {
+        this.viewData.push(value);
+        return result + ', ' + key;
+      },
+      settings.dot.varname,
+      this
+    );
+  }
+
+  // view shortcut
+  this.shortcuts = [];
+  if (_.has(options.express, 'settings')
+    && _.has(options.express.settings, 'view shortcut')
+  ) {
+    this.shortcuts = options.express.settings['view shortcut'];
+    this.settings.varname += ', ' + _.keys(this.shortcuts).join();
+  }
+}
+
+AsyncTemplate.prototype.init = async function() {
+  const self = this;
+  const templatePromises = Object.keys(self.options.sections).map(async key => {
+    if (this.options.sections.hasOwnProperty(key)) {
+      self.templates[key] = await dot.templateAsync(
+        this.options.sections[key],
+        self.settings,
+        self.def
+      );
+    }
+  });
+
+  await Promise.all(templatePromises);
+};
+
+AsyncTemplate.prototype.createPartialHelper =  function (layout, model) {
+  return async function (partialPath) {
+    var args = [].slice.call(arguments, 1);
+    var template = await getTemplateAsync(
+      path.join(this.options.dirname || this.options.express.settings.views, partialPath),
+      this.options.express
+    );
+
+    if (args.length) {
+      model = _.assign.apply(_, [
+        {},
+        model
+      ].concat(args));
+    }
+
+    return await template.render({ layout: layout, model: model, isPartial: true, });
+  }.bind(this);
+};
+AsyncTemplate.prototype.render = async function (options, callback) {
+  var layout = options.layout;
+  var model = options.model;
+  var layoutModel = _.merge({}, layout, this.options.config);
+  const self = this;
+
+  // render the sections
+  const sectionPromisses = Object.keys(self.templates).map(async (key) => {
+    if (self.templates.hasOwnProperty(key)) {
+      try {
+
+        var viewModel = _.union(
+          [
+            layoutModel,
+            self.createPartialHelper(layoutModel, model),
+            options.model._locals || {},
+            model
+          ],
+          self.viewData,
+          _.chain(self.shortcuts)
+            .keys()
+            .map(function (shortcut) {
+              return options.model._locals[self.shortcuts[shortcut]] || null;
+            }, self)
+            .valueOf()
+        );
+
+        layoutModel[key] = await self.templates[key].apply(
+          self.templates[key],
+          viewModel
+        );
+      }
+      catch (err) {
+        var error = new Error(
+          'Failed to render with doT' +
+          ' (' + self.options.filename + ')' +
+          ' - ' + err.toString()
+        );
+        throw error;
+      }
+    }
+  });
+
+  await Promise.all(sectionPromisses);
+
+  // no layout
+  if (!self.isLayout) {
+
+    // append the header to the master page
+    const result = (!options.isPartial ? settings.header : '') + layoutModel.body;
+    return result;
+  }
+
+  const masterTemplate = await getTemplateAsync(self.master, self.options.express);
+  return await masterTemplate.render({ layout: layoutModel, model: model, });
+};
+
+async function builtTemplateFromStringAsync(str, filename, options) {
+
+  try {
+    var config = {};
+
+    // config at the beginning of the file
+    str.replace(settings.config, function (m, conf) {
+      config = yaml.load(conf);
+    });
+
+    // strip comments
+    if (settings.stripComment) {
+      str = str.replace(settings.comment, function (m, code, assign, value) {
+        return '';
+      });
+    }
+
+    // strip whitespace
+    if (settings.stripWhitespace) {
+      settings.dot.strip = settings.stripWhitespace;
+    }
+
+    // layout sections
+    var sections = {};
+
+    if (!config.layout) {
+      sections.body = str;
+    }
+    else {
+      str.replace(settings.dot.define, function (m, code, assign, value) {
+        sections[code] = value;
+      });
+    }
+
+    var templateSettings = _.pick(options, ['settings']);
+    options.getTemplate && (templateSettings.getTemplate = options.getTemplate);
+    templateSettings.cache = options.cache || false;
+    const asyncTemplate = new AsyncTemplate({
+      express: templateSettings,
+      config: config,
+      sections: sections,
+      dirname: path.dirname(filename),
+      filename: filename
+    });
+    await asyncTemplate.init();
+    return  asyncTemplate;
+  }
+  catch (err) {
+    throw new Error(
+      'Failed to build template' +
+      ' (' + filename + ')' +
+      ' - ' + err.toString()
+    );
+  }
+}
+async function getTemplateContentFromFileAsync(filename, options) {
+  return await fsPromises.readFile(filename, 'utf8');
+}
+
+async function buildTemplateAsync(filename, options, callback) {
+  const getTemplateContentFn = options.getTemplate && typeof options.getTemplate === 'function' ? options.getTemplate : getTemplateContentFromFileAsync;
+
+  const templateText = await getTemplateContentFn(filename, options);
+  const template = await builtTemplateFromStringAsync(templateText, filename, options);
+  return template;
+}
+
+async function getTemplateAsync(filename, options, callback) {
+  
+  // cache
+  if (options && options.cache) {
+    var fromCache = cache.get(filename);
+    if (fromCache) {
+      //console.log('cache hit');
+      return fromCache;
+    }
+    //console.log('cache miss');
+  }
+
+  const template = await buildTemplateAsync(filename, options);
+  return template;
+}
+
+async function renderAsync(filename, options) {
+  const template = await getTemplateAsync(filename, options);
+  return await template.render({ model: options, });
+}
+
+async function renderStringAsync(templateString, options) {
+  const template = await builtTemplateFromStringAsync(templateString, '', options);
+  return await template.render({ model: options, });
+}
 
 module.exports = {
   __express: render,
   render: render,
+  renderAsync: renderAsync,
   renderString: renderString,
+  renderStringAsync: renderStringAsync,
   cache: cache,
   settings: settings,
   helper: DotDef.prototype

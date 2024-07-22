@@ -194,6 +194,42 @@ describe('express-dot-engine', function() {
         });
     });
 
+    it('async/await 1', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'partial.dot': 'test-partial [[async function abc() { return 3}]] [[=await abc()]] [[= model.test ]] [[= await abc()]]',
+          'child.dot': 'test-child [[= await partial(\'partial.dot\')]]',
+        }
+      });
+  
+      // run
+      const result = await engine.renderAsync('path/views/child.dot', { test: 'test-model' });
+  
+      // result
+      should(result).equal('test-template test-model');
+    });
+
+
+
+    it('should support 3 levels', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'master.dot': 'test-master [[= layout.section ]]',
+          'middle.dot': '---\nlayout: master.dot\n---\n[[##section:test-middle [[= layout.section ]]#]]',
+          'child.dot': '---\nlayout: middle.dot\n---\n[[##section:test-child#]]',
+        },
+      });
+
+      // run
+      const result = await engine.renderAsync('path/views/child.dot', {});
+  
+      // result
+      should(result).equal('test-master test-middle test-child');
+    });
+
+
     it('should work sync', function() {
       // prepare
       mock({
