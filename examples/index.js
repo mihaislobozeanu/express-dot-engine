@@ -38,5 +38,5 @@ app.get('/helper', function(req, res) {
 });
 
 var server = app.listen(2015, function() {
-  console.log('Run the example at http://locahost:%d', server.address().port);
+  console.log('Run the example at http://localhost:%d', server.address().port);
 });
