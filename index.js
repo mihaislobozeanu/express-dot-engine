@@ -1,3 +1,10 @@
+
+/**
+ * Modifyed by Paul Mihailescu https://github.com/Paul1324, on 22.07.2024
+ * added support for asyncronous templates
+ * created the renderAsync and renderStringAsync function for templates that can contain top level async/await
+ */
+
 const _ = require('lodash');
 const fs = require('fs');
 const fsPromises = require('fs').promises;

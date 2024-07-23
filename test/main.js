@@ -194,42 +194,6 @@ describe('express-dot-engine', function() {
         });
     });
 
-    it('async/await 1', async function() {
-      // prepare
-      mock({
-        'path/views': {
-          'partial.dot': 'test-partial [[async function abc() { return 3}]] [[=await abc()]] [[= model.test ]] [[= await abc()]]',
-          'child.dot': 'test-child [[= await partial(\'partial.dot\')]]',
-        }
-      });
-  
-      // run
-      const result = await engine.renderAsync('path/views/child.dot', { test: 'test-model' });
-  
-      // result
-      should(result).equal('test-template test-model');
-    });
-
-
-
-    it('should support 3 levels', async function() {
-      // prepare
-      mock({
-        'path/views': {
-          'master.dot': 'test-master [[= layout.section ]]',
-          'middle.dot': '---\nlayout: master.dot\n---\n[[##section:test-middle [[= layout.section ]]#]]',
-          'child.dot': '---\nlayout: middle.dot\n---\n[[##section:test-child#]]',
-        },
-      });
-
-      // run
-      const result = await engine.renderAsync('path/views/child.dot', {});
-  
-      // result
-      should(result).equal('test-master test-middle test-child');
-    });
-
-
     it('should work sync', function() {
       // prepare
       mock({
@@ -357,4 +321,137 @@ describe('express-dot-engine', function() {
 
   });
 
+
+
+  //////////////////////////////////////////////////////////////////////////////
+  // TEMPLATE WITH ASYNC/AWAIT
+  //////////////////////////////////////////////////////////////////////////////
+  describe('templates containing top level async/await', function(){
+
+    it('should work inside evaluate', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'child.dot': '[[async function test() {return "test done"} const value = await test();]]test-template [[= value ]]',
+        },
+      });
+
+      // run
+      const result = await engine.renderAsync('path/views/child.dot',{});
+      // result
+      should(result).equal('test-template test done');
+    });
+
+    it('should work inside interpolate', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'child.dot': '[[async function test() {return "test done"} ]]test-template [[= await test()]]',
+        },
+      });
+
+      // run
+      const result = await engine.renderAsync('path/views/child.dot',{});
+      // result
+      should(result).equal('test-template test done');
+    });
+
+
+    it('should work inside encode', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'child.dot': `Encoded async result: [[!await (async () => {
+              await new Promise(resolve => setTimeout(resolve, 0));
+              return '<script>alert("XSS")</script>';
+            })()]]`,
+        },
+      });
+
+      // run
+      const result = await engine.renderAsync('path/views/child.dot',{});
+      // result
+      should(result).equal('Encoded async result: &#60;script&#62;alert(&#34;XSS&#34;)&#60;&#47;script&#62;');
+    });
+
+    it('should work inside conditional', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'child.dot': 
+          `[[? await (async () => {
+              await new Promise(resolve => setTimeout(resolve, 0));
+              return true;
+            })() ]]Condition met[[??]]Condition not met[[?]]`
+        },
+      });
+
+      // run
+      const result = await engine.renderAsync('path/views/child.dot',{});
+      // result
+      should(result).equal('Condition met');
+    });
+
+    it('should work inside iterate', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'child.dot': 
+          `[[~ await (async () => {
+              await new Promise(resolve => setTimeout(resolve, 0));
+              return [1, 2, 3];
+          })() :value:index]]Item [[=index]]: [[=value]][[~]]`
+        },
+      });
+
+      // run
+      const result = await engine.renderAsync('path/views/child.dot',{});
+      // result
+      should(result).equal('Item 0: 1Item 1: 2Item 2: 3');
+    });
+
+    it('should work with partials', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'partial1.dot': '[[=await(async () => \'third level\')()]]',
+          'partial2.dot': '[[=model.media]]\n[[=await partial(\'partial1.dot\')]]',
+          'partial3.dot': 'first level\n[[=await partial(\'partial2.dot\', {media: model.media})]]',
+          'root.dot': 'test-root\n[[= await partial(\'partial3.dot\', { media: model.test, })]]'
+        },
+      });
+
+      // run
+      const result = await engine.renderAsync('path/views/root.dot', { test: 'second level', });
+      // result
+      should(result).equal('test-root\nfirst level\nsecond level\nthird level');
+    });
+
+    it('should support 3 levels', async function() {
+      // prepare
+      mock({
+        'path/views': {
+          'master.dot': 'test-master [[= layout.section ]]',
+          'middle.dot': '---\nlayout: master.dot\n---\n[[##section:test-middle [[= layout.section ]]#]]',
+          'child.dot': '---\nlayout: middle.dot\n---\n[[##section:test-child#]]',
+        },
+      });
+      
+      // run
+      const result = await engine.renderAsync('path/views/child.dot', {});
+      // result
+      should(result).equal('test-master test-middle test-child');
+    });
+
+    it('should support template strings', async function() {
+      // run
+      const result = await engine.renderStringAsync(
+        'test-template [[= model.test ]]',
+        { test: 'test-model', });
+
+      // result
+      should(result).equal('test-template test-model');
+    });
+
+  });
 });
