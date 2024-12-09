@@ -1,6 +1,6 @@
 
 /**
- * Modifyed by Paul Mihailescu https://github.com/Paul1324, on 22.07.2024
+ * Modifyed by Paul Mihailescu https://github.com/Paul1324, on 2024.07.22
  * added support for asyncronous templates
  * created the renderAsync and renderStringAsync function for templates that can contain top level async/await
  */
@@ -8,7 +8,7 @@
 const _ = require('lodash');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
-const dot = require('@eligo/dot');
+const dot = require('@eligo-public/dot');
 const path = require('path');
 const yaml = require('js-yaml');
 
@@ -73,7 +73,7 @@ DotDef.prototype = {
       ' [[= partial(\'path/to/partial\') ]]'
     );
 
-    var template = getTemplate(
+    const template = getTemplate(
       path.join(this.dirname || this.model.settings.views, partialPath),
       this.model
     );
@@ -90,19 +90,15 @@ function DotDefAsync(options) {
 
 DotDefAsync.prototype = {
 
-  partial: async function (partialPath) {
+  partial: function (partialPath) {
 
     console.log('DEPRECATED: ' +
       'Please use the new syntax for partials' +
       ' [[= partial(\'path/to/partial\') ]]'
     );
 
-    var template = await getTemplateAsync(
-      path.join(this.dirname || this.model.settings.views, partialPath),
-      this.model
-    );
-
-    return await template.render({ model: this.model, isPartial: true, });
+    return getTemplateAsync(path.join(this.dirname || this.model.settings.views, partialPath), this.model)
+      .then((template) => template.render({ model: this.model, isPartial: true, }));
   }
 
 };
@@ -173,7 +169,7 @@ Template.prototype.init = function () {
   const self = this,
     options = self.options;
   // doT template
-  for (var key in options.sections) {
+  for (let key in options.sections) {
     if (options.sections.hasOwnProperty(key)) {
       self.templates[key] = dot.template(
         options.sections[key],
@@ -185,19 +181,17 @@ Template.prototype.init = function () {
 }
 
 //Creates the section template functions asyncrounously
-Template.prototype.initAsync = async function () {
+Template.prototype.initAsync = function () {
   const self = this,
     sections = self.options.sections;
-  const templatePromises = Object.keys(sections).map(async key => {
-    if (sections.hasOwnProperty(key)) {
-      self.templates[key] = await dot.templateAsync(
-        sections[key],
-        self.settings,
-        self.def
-      );
-    }
-  });
-  await Promise.all(templatePromises);
+  const templatePromises = Object.keys(sections)
+    .map(key => {
+      if (sections.hasOwnProperty(key)) {
+        return dot.templateAsync(sections[key], self.settings, self.def)
+          .then((t) => self.templates[key] = t)
+      }
+    });
+  return Promise.all(templatePromises);
 };
 
 /**
@@ -242,17 +236,17 @@ Template.prototype.createPartialHelper = function (layout, model) {
 * @param {Function} [callback] (Optional) The async node style callback
 */
 Template.prototype.render = function (options, callback) {
-  var isAsync = callback && typeof callback === 'function';
-  var layout = options.layout;
-  var model = options.model;
-  var layoutModel = _.merge({}, layout, this.options.config);
+  const isAsync = callback && typeof callback === 'function',
+    layout = options.layout,
+    model = options.model,
+    layoutModel = _.merge({}, layout, this.options.config);
 
   // render the sections
-  for (var key in this.templates) {
+  for (let key in this.templates) {
     if (this.templates.hasOwnProperty(key)) {
       try {
 
-        var viewModel = _.union(
+        const viewModel = _.union(
           [
             layoutModel,
             this.createPartialHelper(layoutModel, model),
@@ -274,11 +268,7 @@ Template.prototype.render = function (options, callback) {
         );
       }
       catch (err) {
-        var error = new Error(
-          'Failed to render with doT' +
-          ' (' + this.options.filename + ')' +
-          ' - ' + err.toString()
-        );
+        const error = new Error(`Failed to render with doT (${self.options.filename}) - ${err.toString()}`);
 
         if (isAsync) {
           callback(error);
@@ -293,7 +283,7 @@ Template.prototype.render = function (options, callback) {
   if (!this.isLayout) {
 
     // append the header to the master page
-    var result = (!options.isPartial ? settings.header : '') + layoutModel.body;
+    const result = (!options.isPartial ? settings.header : '') + layoutModel.body;
 
     if (isAsync) {
       callback(null, result);
@@ -303,7 +293,7 @@ Template.prototype.render = function (options, callback) {
 
   // render the master sync
   if (!isAsync) {
-    var masterTemplate = getTemplate(this.master, this.options.express);
+    const masterTemplate = getTemplate(this.master, this.options.express);
     return masterTemplate.render({ layout: layoutModel, model: model, });
   }
 
@@ -324,60 +314,55 @@ Template.prototype.render = function (options, callback) {
 * @param {Object} [options.layout] The layout key/value
 * @param {Object} options.model The model to pass to the view
 */
-Template.prototype.renderAsync = async function (options) {
+Template.prototype.renderAsync = function (options) {
   const self = this,
     layout = options.layout,
     model = options.model,
     layoutModel = _.merge({}, layout, this.options.config);
 
   // render the sections
-  const sectionPromisses = Object.keys(self.templates).map(async (key) => {
-    if (self.templates.hasOwnProperty(key)) {
-      try {
+  const sectionPromisses = Object.keys(self.templates)
+    .map((key) => {
+      if (self.templates.hasOwnProperty(key)) {
+        try {
 
-        const viewModel = _.union(
-          [
-            layoutModel,
-            self.createPartialHelper(layoutModel, model),
-            options.model._locals || {},
-            model
-          ],
-          self.viewData,
-          _.chain(self.shortcuts)
-            .keys()
-            .map(function (shortcut) {
-              return options.model._locals[self.shortcuts[shortcut]] || null;
-            }, self)
-            .valueOf()
-        );
+          const viewModel = _.union(
+            [
+              layoutModel,
+              self.createPartialHelper(layoutModel, model),
+              options.model._locals || {},
+              model
+            ],
+            self.viewData,
+            _.chain(self.shortcuts)
+              .keys()
+              .map(function (shortcut) {
+                return options.model._locals[self.shortcuts[shortcut]] || null;
+              }, self)
+              .valueOf()
+          );
 
-        layoutModel[key] = await self.templates[key].apply(
-          self.templates[key],
-          viewModel
-        );
+          return self.templates[key].apply(self.templates[key], viewModel)
+            .then((m) => layoutModel[key] = m);
+
+        }
+        catch (err) {
+          throw new Error(`Failed to render with doT (${self.options.filename}) - ${err.toString()}`);
+        }
       }
-      catch (err) {
-        const error = new Error(
-          'Failed to render with doT' +
-          ' (' + self.options.filename + ')' +
-          ' - ' + err.toString()
-        );
-        throw error;
+    });
+  return Promise.all(sectionPromisses)
+    .then(() => {
+      // no layout
+      if (!self.isLayout) {
+        // append the header to the master page
+        const result = (!options.isPartial ? settings.header : '') + layoutModel.body;
+        return result;
       }
-    }
-  });
-  await Promise.all(sectionPromisses);
 
-  // no layout
-  if (!self.isLayout) {
-
-    // append the header to the master page
-    const result = (!options.isPartial ? settings.header : '') + layoutModel.body;
-    return result;
-  }
-
-  const masterTemplate = await getTemplateAsync(self.master, self.options.express);
-  return await masterTemplate.renderAsync({ layout: layoutModel, model: model, });
+      return getTemplateAsync(self.master, self.options.express)
+        .then((masterTemplate) => masterTemplate.renderAsync({ layout: layoutModel, model: model, }));
+    });
 };
 
 /**
@@ -430,7 +415,7 @@ function getTemplate(filename, options, callback) {
   buildTemplate(filename, options, done);
 }
 
-async function getTemplateAsync(filename, options) {
+function getTemplateAsync(filename, options) {
   const cacheTemplate = !!options?.cache;
   // cache
   if (cacheTemplate) {
@@ -441,11 +426,14 @@ async function getTemplateAsync(filename, options) {
     }
     //console.log('cache miss');
   }
-  const template = await buildTemplateAsync(filename, options);
-  if (cacheTemplate && template) {
-    cache.set(filename, template);
-  }
-  return template;
+
+  return buildTemplateAsync(filename, options)
+    .then((template) => {
+      if (cacheTemplate && template) {
+        cache.set(filename, template);
+      }
+      return template;
+    });
 }
 
 /**
@@ -456,7 +444,7 @@ async function getTemplateAsync(filename, options) {
  * @param {Function} callback (Optional) The async node style callback
  */
 function buildTemplate(filename, options, callback) {
-  var isAsync = callback && typeof callback === 'function',
+  const isAsync = callback && typeof callback === 'function',
     getTemplateContentFn = options.getTemplate && typeof options.getTemplate === 'function' ? options.getTemplate : getTemplateContentFromFile;
 
   // sync
@@ -476,11 +464,12 @@ function buildTemplate(filename, options, callback) {
   getTemplateContentFn(filename, options, done);
 }
 
-async function buildTemplateAsync(filename, options) {
+function buildTemplateAsync(filename, options) {
   const getTemplateContentFn = options.getTemplate && typeof options.getTemplate === 'function' ? options.getTemplate
-    : async () => await fsPromises.readFile(filename, 'utf8'),
-    templateText = await getTemplateContentFn(filename, options);
-  return await builtTemplateFromStringAsync(templateText, filename, options);
+    : () => fsPromises.readFile(filename, 'utf8');
+
+  return Promise.resolve(getTemplateContentFn(filename, options))
+    .then((templateText) => builtTemplateFromStringAsync(templateText, filename, options));
 }
 
 /**
@@ -591,7 +580,7 @@ function builtTemplateFromString(str, filename, options) {
  * @param {Object} options The options sent by express
  * @return {Promise<Template>} A promise that resolves to the template object
  */
-async function builtTemplateFromStringAsync(str, filename, options) {
+function builtTemplateFromStringAsync(str, filename, options) {
   try {
     const { config, sections, templateSettings } = processTemplateString(str, options);
 
@@ -603,14 +592,9 @@ async function builtTemplateFromStringAsync(str, filename, options) {
       filename: filename
     }, true);
 
-    await asyncTemplate.initAsync();
-    return asyncTemplate;
+    return asyncTemplate.initAsync().then(() => asyncTemplate);
   } catch (err) {
-    throw new Error(
-      'Failed to build template' +
-      ' (' + filename + ')' +
-      ' - ' + err.toString()
-    );
+    throw new Error(`Failed to build template (${filename}) - ${err.toString()}`);
   }
 }
 
@@ -621,7 +605,7 @@ async function builtTemplateFromStringAsync(str, filename, options) {
 * @param {Function} callback (Optional) The async node style callback
 */
 function render(filename, options, callback) {
-  var isAsync = callback && typeof callback === 'function';
+  const isAsync = callback && typeof callback === 'function';
 
   if (!isAsync) {
     return renderSync(filename, options)
@@ -642,7 +626,7 @@ function render(filename, options, callback) {
 * @param {Object} options The model to pass to the view
 */
 function renderSync(filename, options) {
-  var template = getTemplate(filename, options);
+  const template = getTemplate(filename, options);
   return template.render({ model: options, });
 }
 
@@ -652,9 +636,9 @@ function renderSync(filename, options) {
 * @param {String} filename The path to the file
 * @param {Object} options The model to pass to the view
 */
-async function renderAsync(filename, options) {
-  const template = await getTemplateAsync(filename, options);
-  return await template.renderAsync({ model: options, });
+function renderAsync(filename, options) {
+  return getTemplateAsync(filename, options)
+    .then((template) => template.renderAsync({ model: options, }));
 }
 
 /**
@@ -664,7 +648,7 @@ async function renderAsync(filename, options) {
 * @param {Function} callback (Optional) The async node style callback
 */
 function renderString(templateString, options, callback) {
-  var template = builtTemplateFromString(templateString, '', options);
+  const template = builtTemplateFromString(templateString, '', options);
   return template.render({ model: options, }, callback);
 }
 
@@ -673,9 +657,9 @@ function renderString(templateString, options, callback) {
 * @param {String} templateString The template string
 * @param {Object} options The model to pass to the view
 */
-async function renderStringAsync(templateString, options) {
-  const template = await builtTemplateFromStringAsync(templateString, '', options);
-  return await template.renderAsync({ model: options, });
+function renderStringAsync(templateString, options) {
+  return builtTemplateFromStringAsync(templateString, '', options)
+    .then((template) => template.renderAsync({ model: options, }));
 }
 
 /**
