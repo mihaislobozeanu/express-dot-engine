@@ -677,6 +677,7 @@ function __expressAsync(filename, options, callback) {
 module.exports = {
   __express: render,
   __expressAsync: __expressAsync,
+  doT: dot,
   render: render,
   renderAsync: renderAsync,
   renderString: renderString,
