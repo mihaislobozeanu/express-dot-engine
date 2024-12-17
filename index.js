@@ -18,6 +18,7 @@ const yaml = require('js-yaml');
 const settings = {
   config: /^---([\s\S]+?)---/g,
   comment: /<!--([\s\S]+?)-->/g,
+  partialAsync: /(?<!await\s+)\bpartial\s*\([^)]*\)/g,
   header: '',
 
   stripComment: false,
@@ -236,7 +237,8 @@ Template.prototype.createPartialHelper = function (layout, model) {
 * @param {Function} [callback] (Optional) The async node style callback
 */
 Template.prototype.render = function (options, callback) {
-  const isAsync = callback && typeof callback === 'function',
+  const self = this,
+    isAsync = callback && typeof callback === 'function',
     layout = options.layout,
     model = options.model,
     layoutModel = _.merge({}, layout, this.options.config);
@@ -508,7 +510,7 @@ function getTemplateContentFromFile(filename, options, callback) {
  * @param {Object} options The options sent by express
  * @return {Object} An object containing processed data
  */
-function processTemplateString(str, options) {
+function processTemplateString(str, options, isAsync) {
   let config = {};
 
   // config at the beginning of the file
@@ -529,13 +531,14 @@ function processTemplateString(str, options) {
   }
 
   // layout sections
-  let sections = {};
+  let sections = {},
+    partial = isAsync ? (str) => str.replace(settings.partialAsync, 'await $&') : (str) => str;
 
   if (!config.layout) {
-    sections.body = str;
+    sections.body = partial(str);
   } else {
     str.replace(settings.dot.define, function (m, code, assign, value) {
-      sections[code] = value;
+      sections[code] = partial(value);
     });
   }
 
@@ -555,7 +558,7 @@ function processTemplateString(str, options) {
 */
 function builtTemplateFromString(str, filename, options) {
   try {
-    const { config, sections, templateSettings } = processTemplateString(str, options);
+    const { config, sections, templateSettings } = processTemplateString(str, options, false);
 
     return new Template({
       express: templateSettings,
@@ -582,7 +585,7 @@ function builtTemplateFromString(str, filename, options) {
  */
 function builtTemplateFromStringAsync(str, filename, options) {
   try {
-    const { config, sections, templateSettings } = processTemplateString(str, options);
+    const { config, sections, templateSettings } = processTemplateString(str, options, true);
 
     const asyncTemplate = new Template({
       express: templateSettings,
