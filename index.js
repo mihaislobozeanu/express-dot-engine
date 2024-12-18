@@ -57,6 +57,23 @@ const cache = {
 };
 
 /**
+* Async cache store
+*/
+const asyncCache = {
+  cache: {},
+
+  get: function (key) {
+    return this.cache[key];
+  },
+  set: function (key, value) {
+    this.cache[key] = value;
+  },
+  clear: function () {
+    this.cache = {};
+  }
+};
+
+/**
 * Server-side helper
 */
 function DotDef(options) {
@@ -421,18 +438,18 @@ function getTemplateAsync(filename, options) {
   const cacheTemplate = !!options?.cache;
   // cache
   if (cacheTemplate) {
-    const fromCache = cache.get(filename);
+    const fromCache = asyncCache.get(filename);
     if (fromCache) {
-      //console.log('cache hit');
+      //console.log('asyncCache hit');
       return Promise.resolve(fromCache);
     }
-    //console.log('cache miss');
+    //console.log('asyncCache miss');
   }
 
   return buildTemplateAsync(filename, options)
     .then((template) => {
       if (cacheTemplate && template) {
-        cache.set(filename, template);
+        asyncCache.set(filename, template);
       }
       return template;
     });
@@ -686,6 +703,7 @@ module.exports = {
   renderString: renderString,
   renderStringAsync: renderStringAsync,
   cache: cache,
+  asyncCache: asyncCache,
   settings: settings,
   helper: DotDef.prototype,
   helperAsync: DotDefAsync.prototype

@@ -328,7 +328,7 @@ describe('express-dot-engine', function () {
   //////////////////////////////////////////////////////////////////////////////
   describe('templates containing top level async/await', function () {
 
-    it.only('cache', async function () {
+    it('cache', async function () {
       // prepare
       mock({
         'path/views': {
