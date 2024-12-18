@@ -328,6 +328,18 @@ describe('express-dot-engine', function () {
   //////////////////////////////////////////////////////////////////////////////
   describe('templates containing top level async/await', function () {
 
+    it.only('cache', async function () {
+      // prepare
+      mock({
+        'path/views': {
+          'child.dot': '[[async function test() {return "test done"} const value = await test();]]test-template [[= value ]]',
+        },
+      });
+
+      should(await engine.renderAsync('path/views/child.dot', { cache: true })).equal('test-template test done');
+      should(await engine.renderAsync('path/views/child.dot', { cache: true })).be.ok();
+    });
+
     it('should work inside evaluate', async function () {
       // prepare
       mock({
@@ -464,7 +476,7 @@ describe('express-dot-engine', function () {
       // run
       const result = await engine.renderStringAsync(
         'test-template [[= model.test ]]',
-        { test: 'test-model', });
+        { test: 'test-model' });
 
       // result
       should(result).equal('test-template test-model');

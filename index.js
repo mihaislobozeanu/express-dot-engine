@@ -424,7 +424,7 @@ function getTemplateAsync(filename, options) {
     const fromCache = cache.get(filename);
     if (fromCache) {
       //console.log('cache hit');
-      return fromCache;
+      return Promise.resolve(fromCache);
     }
     //console.log('cache miss');
   }
@@ -482,7 +482,7 @@ function buildTemplateAsync(filename, options) {
  * @param {Function} callback (Optional) The async node style callback
  */
 function getTemplateContentFromFile(filename, options, callback) {
-  var isAsync = callback && typeof callback === 'function';
+  const isAsync = callback && typeof callback === 'function';
 
   // sync
   if (!isAsync) {
